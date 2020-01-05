@@ -5,14 +5,14 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
 const (
-	deviceID             = "testDeviceId"
-	actionID             = "testActionId"
-	token                = "testToken"
-	executeActionURLPath = "/v2/devices/" + deviceID + "/actions/" + actionID
+	deviceID = "testDeviceId"
+	actionID = "testActionId"
+	token    = "testToken"
 )
 
 func setupTestServer(t *testing.T, requestHandler func(http.ResponseWriter, *http.Request)) (*httptest.Server, *restAPIClient, <-chan (int)) {
@@ -35,21 +35,47 @@ func setupTestServer(t *testing.T, requestHandler func(http.ResponseWriter, *htt
 	return ts, client, received
 }
 
+func expectRequestReceived(t *testing.T, received <-chan (int)) {
+	t.Helper()
+	select {
+	case _, ok := <-received:
+		if ok {
+			t.Fatal("Received a value but channel was not closed. Wtf?")
+		}
+	default:
+		t.Fatal("No request was sent")
+	}
+}
+
+func expectToken(t *testing.T, r *http.Request) {
+	t.Helper()
+	receivedToken := r.Header.Get("BOND-Token")
+	if receivedToken != token {
+		t.Errorf("expected token header %q but got %q", token, receivedToken)
+	}
+}
+
+func expectMethod(t *testing.T, expectedMethod string, r *http.Request) {
+	t.Helper()
+	if r.Method != expectedMethod {
+		t.Errorf("expected request method %q but got %q", expectedMethod, r.Method)
+	}
+}
+
+func expectURLPath(t *testing.T, expectedPath string, r *http.Request) {
+	if r.URL.Path != expectedPath {
+		t.Errorf("expected URL path %q but got %q", expectedPath, r.URL.Path)
+	}
+}
+
 func Test_restAPIClient_executeAction(t *testing.T) {
 	// use float64 for numeric value, per https://golang.org/pkg/encoding/json/#Unmarshal
 	expectedArg := []interface{}{"1", float64(2), "three"}
 
 	ts, client, received := setupTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		receivedToken := r.Header.Get("BOND-Token")
-		if receivedToken != token {
-			t.Errorf("expected token header %q but got %q", token, receivedToken)
-		}
-		if r.Method != http.MethodPut {
-			t.Errorf("expected request method %q but got %q", http.MethodPut, r.Method)
-		}
-		if r.URL.Path != executeActionURLPath {
-			t.Errorf("expected URL path %q but got %q", executeActionURLPath, r.URL.Path)
-		}
+		expectToken(t, r)
+		expectMethod(t, http.MethodPut, r)
+		expectURLPath(t, "/v2/devices/"+deviceID+"/actions/"+actionID, r)
 		defer r.Body.Close()
 		if bodyBytes, err := ioutil.ReadAll(r.Body); err != nil {
 			t.Errorf("error reading request body: %v", err)
@@ -79,19 +105,12 @@ func Test_restAPIClient_executeAction(t *testing.T) {
 	})
 	defer ts.Close()
 
-	err := client.executeAction(deviceID, actionID, expectedArg)
+	err := client.ExecuteAction(deviceID, actionID, expectedArg)
 	if err != nil {
 		t.Errorf("got error: %v", err)
 	}
 
-	select {
-	case _, ok := <-received:
-		if ok {
-			t.Fatal("Received a value but channel was not closed. Wtf?")
-		}
-	default:
-		t.Fatal("No request was sent")
-	}
+	expectRequestReceived(t, received)
 }
 
 func Test_restAPIClient_executeAction_serverError(t *testing.T) {
@@ -100,18 +119,81 @@ func Test_restAPIClient_executeAction_serverError(t *testing.T) {
 	})
 	defer ts.Close()
 
-	err := client.executeAction(deviceID, actionID, nil)
+	err := client.ExecuteAction(deviceID, actionID, nil)
 
-	select {
-	case _, ok := <-received:
-		if ok {
-			t.Fatal("Received a value but channel was not closed. Wtf?")
-		}
-	default:
-		t.Fatal("No request was sent")
-	}
+	expectRequestReceived(t, received)
 
 	if err == nil {
 		t.Errorf("expected an error but got none")
+	}
+
+	if !strings.Contains(err.Error(), "expected 2xx response but got") {
+		t.Fatalf("got different error than expected: %v", err)
+	}
+}
+
+func Test_restAPIClient_getDeviceIds(t *testing.T) {
+	expectedDeviceIDs := map[string]bool{
+		"deviceID1": true,
+		"deviceID2": true,
+		"deviceID3": true,
+	}
+	ts, client, received := setupTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		expectToken(t, r)
+		expectMethod(t, http.MethodGet, r)
+		expectURLPath(t, "/v2/devices", r)
+
+		const responseJSON = `{
+			"_": "7fc1e84b",
+			"deviceID1": {
+				"_": "9a5e1136"
+			},
+			"deviceID2": {
+				"_": "409d124b"
+			},
+			"deviceID3": {
+				"_": "aaf392f2"
+			}
+		}`
+
+		w.Write([]byte(responseJSON))
+	})
+	defer ts.Close()
+
+	actualIDs, err := client.GetDeviceIDs()
+
+	if err != nil {
+		t.Fatalf("unexpected request error: %v", err)
+	}
+
+	expectRequestReceived(t, received)
+
+	for _, v := range actualIDs {
+		if _, ok := expectedDeviceIDs[v]; !ok {
+			t.Errorf("unexpected device ID: %q", v)
+		}
+	}
+
+	if len(actualIDs) != len(expectedDeviceIDs) {
+		t.Fatalf("expected response containing %v but got %v", expectedDeviceIDs, actualIDs)
+	}
+}
+
+func Test_restAPIClient_getDeviceIds_serverError(t *testing.T) {
+	ts, client, received := setupTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "expected error", 503)
+	})
+	defer ts.Close()
+
+	_, err := client.GetDeviceIDs()
+
+	expectRequestReceived(t, received)
+
+	if err == nil {
+		t.Fatalf("expected an error but got none")
+	}
+
+	if !strings.Contains(err.Error(), "expected 2xx response but got") {
+		t.Fatalf("got different error than expected: %v", err)
 	}
 }
