@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 )
 
@@ -25,12 +24,10 @@ type executeActionArg struct {
 
 func (c *restAPIClient) executeAction(deviceID string, actionID string, argument interface{}) error {
 	requestArg := executeActionArg{argument}
-	log.Printf("requestArg: %v\n", requestArg)
 	requestBody, err := json.Marshal(requestArg)
 	if err != nil {
 		return fmt.Errorf("error marshaling request body to JSON: %v", err)
 	}
-	log.Printf("Request body: %s\n", requestBody)
 
 	req, err := http.NewRequest(http.MethodPut,
 		fmt.Sprintf("%s/v2/devices/%s/actions/%s", c.hostname, deviceID, actionID),
@@ -41,9 +38,13 @@ func (c *restAPIClient) executeAction(deviceID string, actionID string, argument
 
 	req.Header.Add("BOND-Token", c.token)
 
-	_, err = c.client.Do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("error executing HTTP request: %v", err)
+	}
+
+	if !(resp.StatusCode >= 200 && resp.StatusCode < 300) {
+		return fmt.Errorf("expected 2xx response but got: %v", resp)
 	}
 
 	return nil

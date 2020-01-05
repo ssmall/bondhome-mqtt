@@ -2,28 +2,44 @@ package bondhome
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
 
-func Test_restAPIClient_executeAction(t *testing.T) {
-	deviceID := "testDeviceId"
-	actionID := "testActionId"
-	// use float64 for numeric value, per https://golang.org/pkg/encoding/json/#Unmarshal
-	expectedArg := []interface{}{"1", float64(2), "three"}
-	token := "testToken"
-	expectedURLPath := fmt.Sprintf("/v2/devices/%s/actions/%s", deviceID, actionID)
+const (
+	deviceID             = "testDeviceId"
+	actionID             = "testActionId"
+	token                = "testToken"
+	executeActionURLPath = "/v2/devices/" + deviceID + "/actions/" + actionID
+)
 
+func setupTestServer(t *testing.T, requestHandler func(http.ResponseWriter, *http.Request)) (*httptest.Server, *restAPIClient, <-chan (int)) {
+	t.Helper()
 	// Use channel to signal that a request was received
 	received := make(chan int)
-
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// close received channel so that test will panic if there is
 		// more than one request
 		close(received)
+		requestHandler(w, r)
+	}))
+
+	client := &restAPIClient{
+		client:   ts.Client(),
+		hostname: ts.URL,
+		token:    token,
+	}
+
+	return ts, client, received
+}
+
+func Test_restAPIClient_executeAction(t *testing.T) {
+	// use float64 for numeric value, per https://golang.org/pkg/encoding/json/#Unmarshal
+	expectedArg := []interface{}{"1", float64(2), "three"}
+
+	ts, client, received := setupTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		receivedToken := r.Header.Get("BOND-Token")
 		if receivedToken != token {
 			t.Errorf("expected token header %q but got %q", token, receivedToken)
@@ -31,8 +47,8 @@ func Test_restAPIClient_executeAction(t *testing.T) {
 		if r.Method != http.MethodPut {
 			t.Errorf("expected request method %q but got %q", http.MethodPut, r.Method)
 		}
-		if r.URL.Path != expectedURLPath {
-			t.Errorf("expected URL path %q but got %q", expectedURLPath, r.URL.Path)
+		if r.URL.Path != executeActionURLPath {
+			t.Errorf("expected URL path %q but got %q", executeActionURLPath, r.URL.Path)
 		}
 		defer r.Body.Close()
 		if bodyBytes, err := ioutil.ReadAll(r.Body); err != nil {
@@ -60,14 +76,8 @@ func Test_restAPIClient_executeAction(t *testing.T) {
 			}
 		}
 		w.WriteHeader(http.StatusNoContent)
-	}))
+	})
 	defer ts.Close()
-
-	client := &restAPIClient{
-		client:   ts.Client(),
-		hostname: ts.URL,
-		token:    token,
-	}
 
 	err := client.executeAction(deviceID, actionID, expectedArg)
 	if err != nil {
@@ -81,5 +91,27 @@ func Test_restAPIClient_executeAction(t *testing.T) {
 		}
 	default:
 		t.Fatal("No request was sent")
+	}
+}
+
+func Test_restAPIClient_executeAction_serverError(t *testing.T) {
+	ts, client, received := setupTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "expected error", 503)
+	})
+	defer ts.Close()
+
+	err := client.executeAction(deviceID, actionID, nil)
+
+	select {
+	case _, ok := <-received:
+		if ok {
+			t.Fatal("Received a value but channel was not closed. Wtf?")
+		}
+	default:
+		t.Fatal("No request was sent")
+	}
+
+	if err == nil {
+		t.Errorf("expected an error but got none")
 	}
 }
