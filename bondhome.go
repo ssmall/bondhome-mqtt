@@ -8,9 +8,19 @@ import (
 	"net/http"
 )
 
+// Device represents information about the device
+// retrieved via the following API request: http://docs-local.appbond.com/#tag/Devices/paths/~1v2~1devices~1{device_id}/get
+type Device struct {
+	Name     string   `json:"name"`
+	Type     string   `json:"type"`
+	Location string   `json:"location"`
+	Actions  []string `json:"actions"`
+}
+
 // Bridge interface is used to communicate with the Bond bridge
 type Bridge interface {
 	ExecuteAction(deviceID string, actionID string) error
+	GetDevice(deviceID string) (*Device, error)
 	GetDeviceIDs() ([]string, error)
 }
 
@@ -48,6 +58,34 @@ func (c *restAPIClient) ExecuteAction(deviceID string, actionID string, argument
 	return nil
 }
 
+func (c *restAPIClient) GetDevice(deviceID string) (*Device, error) {
+	req, err := c.newRequest(http.MethodGet, "v2/devices/"+deviceID, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error executing HTTP request: %v", err)
+	}
+
+	defer resp.Body.Close()
+
+	if err = expect2xxResponse(resp); err != nil {
+		return nil, err
+	}
+
+	deviceResult := &Device{}
+
+	err = unmarshalResponseBody(resp, deviceResult)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return deviceResult, err
+}
+
 func (c *restAPIClient) GetDeviceIDs() ([]string, error) {
 	req, err := c.newRequest(http.MethodGet, "v2/devices", nil)
 	if err != nil {
@@ -64,19 +102,12 @@ func (c *restAPIClient) GetDeviceIDs() ([]string, error) {
 	if err = expect2xxResponse(resp); err != nil {
 		return nil, err
 	}
-
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-
-	if err != nil {
-		return nil, fmt.Errorf("error reading response body: %v", err)
-	}
-
 	var responseObject map[string]interface{}
 
-	err = json.Unmarshal(bodyBytes, &responseObject)
+	err = unmarshalResponseBody(resp, &responseObject)
 
 	if err != nil {
-		return nil, fmt.Errorf("error unmarshaling JSON from response body: %v\nBody: %s", err, bodyBytes)
+		return nil, err
 	}
 
 	ids := make([]string, 0, len(responseObject)-1)
@@ -106,6 +137,21 @@ func (c *restAPIClient) newRequest(method string, urlPath string, body []byte) (
 func expect2xxResponse(r *http.Response) error {
 	if !(r.StatusCode >= 200 && r.StatusCode < 300) {
 		return fmt.Errorf("expected 2xx response but got: %v", r)
+	}
+	return nil
+}
+
+func unmarshalResponseBody(r *http.Response, v interface{}) error {
+	bodyBytes, err := ioutil.ReadAll(r.Body)
+
+	if err != nil {
+		return fmt.Errorf("error reading response body: %v", err)
+	}
+
+	err = json.Unmarshal(bodyBytes, v)
+
+	if err != nil {
+		return fmt.Errorf("error unmarshaling JSON from response body: %v\nBody: %s", err, bodyBytes)
 	}
 	return nil
 }

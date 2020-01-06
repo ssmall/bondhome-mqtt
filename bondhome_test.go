@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -186,6 +187,82 @@ func Test_restAPIClient_getDeviceIds_serverError(t *testing.T) {
 	defer ts.Close()
 
 	_, err := client.GetDeviceIDs()
+
+	expectRequestReceived(t, received)
+
+	if err == nil {
+		t.Fatalf("expected an error but got none")
+	}
+
+	if !strings.Contains(err.Error(), "expected 2xx response but got") {
+		t.Fatalf("got different error than expected: %v", err)
+	}
+}
+
+func Test_restAPIClient_getDevice(t *testing.T) {
+	expectedDevice := &Device{
+		Name:     "Fireplace",
+		Type:     "FP",
+		Location: "Living Room",
+		Actions: []string{
+			"TurnOff",
+			"TurnOn",
+			"Stop",
+			"TogglePower",
+		},
+	}
+
+	ts, client, received := setupTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		expectToken(t, r)
+		expectMethod(t, http.MethodGet, r)
+		expectURLPath(t, "/v2/devices/"+deviceID, r)
+
+		const responseJSON = `{
+			"name": "Fireplace",
+			"type": "FP",
+			"location": "Living Room",
+			"actions": [
+				"TurnOff",
+				"TurnOn",
+				"Stop",
+				"TogglePower"
+			],
+			"_": "54d9b20a",
+			"commands": {
+				"_": "7618645a"
+			},
+			"state": {
+				"_": "fe8c688d"
+			},
+			"properties": {
+				"_": "598b1c06"
+			}
+		}`
+
+		w.Write([]byte(responseJSON))
+	})
+	defer ts.Close()
+
+	d, err := client.GetDevice(deviceID)
+
+	if err != nil {
+		t.Fatalf("unexpected request error: %v", err)
+	}
+
+	expectRequestReceived(t, received)
+
+	if !reflect.DeepEqual(d, expectedDevice) {
+		t.Fatalf("expected:\n%#v\nbut was:\n%#v", *expectedDevice, *d)
+	}
+}
+
+func Test_restAPIClient_getDevice_serverError(t *testing.T) {
+	ts, client, received := setupTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "expected error", 503)
+	})
+	defer ts.Close()
+
+	_, err := client.GetDevice(deviceID)
 
 	expectRequestReceived(t, received)
 
