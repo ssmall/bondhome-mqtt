@@ -74,7 +74,7 @@ func (c *bpupClient) StartListening(ctx context.Context) error {
 		for {
 			select {
 			case <-time.After(60 * time.Second):
-				sendKeepAlive(c.conn, 1*time.Second, 0)
+				sendKeepAlive(ctx, c.conn, 1*time.Second, 0)
 			case <-ctx.Done():
 				return
 			}
@@ -84,14 +84,19 @@ func (c *bpupClient) StartListening(ctx context.Context) error {
 	return nil
 }
 
-func sendKeepAlive(conn *net.UDPConn, backoff time.Duration, elapsed time.Duration) {
+func sendKeepAlive(ctx context.Context, conn *net.UDPConn, backoff time.Duration, elapsed time.Duration) {
 	defer func() {
 		if r := recover(); r != nil {
 			if (elapsed + backoff) <= 120*time.Second {
 				log.Printf("Retrying failed keep-alive after %s; failure was: %v\n", backoff, r)
-				time.Sleep(backoff)
-				sendKeepAlive(conn, 2*backoff, elapsed+backoff)
+				select {
+				case <-time.After(backoff):
+					sendKeepAlive(ctx, conn, 2*backoff, elapsed+backoff)
+				case <-ctx.Done():
+					return
+				}
 			} else {
+				log.Printf("Not retrying failed keep-alive since %s have elapsed", elapsed)
 				panic(r)
 			}
 		}

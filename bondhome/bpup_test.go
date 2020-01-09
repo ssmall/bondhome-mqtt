@@ -78,6 +78,23 @@ func startTestServer(ctx context.Context, t *testing.T, messageHandler func(mess
 	}
 }
 
+func startTestServerWithHandshake(ctx context.Context, t *testing.T, messageHandler func(message string) *string) testServer {
+	initialResponse := `{"B":"ZZBL12345"}\n`
+
+	// Set up a channel to facilitate the initial server handshake
+	firstReceive := make(chan struct{}, 1)
+	firstReceive <- struct{}{}
+
+	return startTestServer(ctx, t, func(message string) *string {
+		resp := messageHandler(message)
+		if _, ok := <-firstReceive; ok { // this is the first receive
+			close(firstReceive)
+			return &initialResponse
+		}
+		return resp
+	})
+}
+
 func Test_udpTestServer(t *testing.T) {
 	serverResponse := "hi"
 	ctx := context.Background()
@@ -127,22 +144,14 @@ func Test_udpTestServer(t *testing.T) {
 	}
 }
 
+// takes up to 90s to run
 func Test_StartListening(t *testing.T) {
-	initialResponse := `{"B":"ZZBL12345"}\n`
 	ctx := context.Background()
 
 	received := make(chan string, 3)
 
-	// Set up a channel to facilitate the initial server handshake
-	firstReceive := make(chan struct{}, 1)
-	firstReceive <- struct{}{}
-
-	srv := startTestServer(ctx, t, func(msg string) *string {
+	srv := startTestServerWithHandshake(ctx, t, func(msg string) *string {
 		received <- msg
-		if _, ok := <-firstReceive; ok { // this is the first receive
-			close(firstReceive)
-			return &initialResponse
-		}
 		return nil
 	})
 	defer srv.Stop()
@@ -177,4 +186,39 @@ func Test_StartListening(t *testing.T) {
 	case <-time.After(90 * time.Second):
 		t.Fatalf("Expected keepalive signal within 90 seconds")
 	}
+}
+
+// takes at least 90s to run
+func Test_StartListening_keepAliveError(t *testing.T) {
+	t.Skip("Un-skip this test and look at the logs to see the keep-alive retry mechanism working")
+	ctx := context.Background()
+	srv := startTestServerWithHandshake(ctx, t, func(msg string) *string {
+		return nil
+	})
+	defer srv.Stop()
+
+	c, err := NewClient(srv.Address())
+	if err != nil {
+		t.Fatal("Error creating client:", err)
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	err = c.StartListening(ctx)
+	if err != nil {
+		t.Fatal("Error calling StartListening:", err)
+	}
+
+	// Deliberately break the keep-alive functionality by forcibly
+	// closing the client's UDP socket
+	b := c.(*bpupClient)
+	err = b.conn.Close()
+	if err != nil {
+		t.Fatal("Couldn't close connection:", err)
+	}
+
+	// Wait long enough for some retries to trigger but not long enough
+	// for it to totally time out and panic
+	time.Sleep(90 * time.Second)
 }
