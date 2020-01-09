@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 )
 
@@ -19,9 +20,18 @@ type Device struct {
 
 // Bridge interface is used to communicate with the Bond bridge
 type Bridge interface {
-	ExecuteAction(deviceID string, actionID string) error
+	ExecuteAction(deviceID string, actionID string, argumentJSON string) error
 	GetDevice(deviceID string) (*Device, error)
 	GetDeviceIDs() ([]string, error)
+}
+
+// NewBridge creates a new BondHome bridge API client
+func NewBridge(hostname string, token string) Bridge {
+	return &restAPIClient{
+		client:   http.DefaultClient,
+		hostname: hostname,
+		token:    token,
+	}
 }
 
 type restAPIClient struct {
@@ -34,21 +44,17 @@ type executeActionArg struct {
 	Argument interface{} `json:"argument"`
 }
 
-func (c *restAPIClient) ExecuteAction(deviceID string, actionID string, argument interface{}) error {
-	requestArg := executeActionArg{argument}
-	requestBody, err := json.Marshal(requestArg)
-	if err != nil {
-		return fmt.Errorf("error marshaling request body to JSON: %v", err)
-	}
-
-	req, err := c.newRequest(http.MethodPut, fmt.Sprintf("v2/devices/%s/actions/%s", deviceID, actionID), requestBody)
+func (c *restAPIClient) ExecuteAction(deviceID string, actionID string, argumentJSON string) error {
+	req, err := c.newRequest(http.MethodPut, fmt.Sprintf("v2/devices/%s/actions/%s", deviceID, actionID), []byte(argumentJSON))
 	if err != nil {
 		return err
 	}
 
+	log.Printf("Sending request: %s %s body=%q", req.Method, req.URL, argumentJSON)
+
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("error executing HTTP request: %v", err)
+		return fmt.Errorf("error executing HTTP request: %w", err)
 	}
 
 	if err = expect2xxResponse(resp); err != nil {
@@ -66,7 +72,7 @@ func (c *restAPIClient) GetDevice(deviceID string) (*Device, error) {
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("error executing HTTP request: %v", err)
+		return nil, fmt.Errorf("error executing HTTP request: %w", err)
 	}
 
 	defer resp.Body.Close()
@@ -94,7 +100,7 @@ func (c *restAPIClient) GetDeviceIDs() ([]string, error) {
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("error executing HTTP request: %v", err)
+		return nil, fmt.Errorf("error executing HTTP request: %w", err)
 	}
 
 	defer resp.Body.Close()
@@ -126,7 +132,7 @@ func (c *restAPIClient) newRequest(method string, urlPath string, body []byte) (
 		fmt.Sprintf("%s/%s", c.hostname, urlPath),
 		bytes.NewBuffer(body))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %v", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Add("BOND-Token", c.token)
@@ -145,13 +151,13 @@ func unmarshalResponseBody(r *http.Response, v interface{}) error {
 	bodyBytes, err := ioutil.ReadAll(r.Body)
 
 	if err != nil {
-		return fmt.Errorf("error reading response body: %v", err)
+		return fmt.Errorf("error reading response body: %w", err)
 	}
 
 	err = json.Unmarshal(bodyBytes, v)
 
 	if err != nil {
-		return fmt.Errorf("error unmarshaling JSON from response body: %v\nBody: %s", err, bodyBytes)
+		return fmt.Errorf("error unmarshaling JSON from response body: %w\nBody: %s", err, bodyBytes)
 	}
 	return nil
 }

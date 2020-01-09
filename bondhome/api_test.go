@@ -1,7 +1,6 @@
 package bondhome
 
 import (
-	"encoding/json"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -71,7 +70,7 @@ func expectURLPath(t *testing.T, expectedPath string, r *http.Request) {
 
 func Test_restAPIClient_executeAction(t *testing.T) {
 	// use float64 for numeric value, per https://golang.org/pkg/encoding/json/#Unmarshal
-	expectedArg := []interface{}{"1", float64(2), "three"}
+	expectedArg := `{argument: ["1",2,"three"]}`
 
 	ts, client, received := setupTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		expectToken(t, r)
@@ -80,27 +79,8 @@ func Test_restAPIClient_executeAction(t *testing.T) {
 		defer r.Body.Close()
 		if bodyBytes, err := ioutil.ReadAll(r.Body); err != nil {
 			t.Errorf("error reading request body: %v", err)
-		} else {
-			var requestBody struct {
-				Argument interface{} `json:"argument"`
-			}
-			if err = json.Unmarshal(bodyBytes, &requestBody); err != nil {
-				t.Errorf("error unmarshalling request body: %v\nBody: %s", err, bodyBytes)
-			} else {
-				switch actualArg := requestBody.Argument.(type) {
-				case []interface{}:
-					if len(actualArg) != len(expectedArg) {
-						t.Errorf("expected argument %q, but got %q", expectedArg, actualArg)
-					}
-					for i, actual := range actualArg {
-						if actual != expectedArg[i] {
-							t.Errorf("expected argument <%[1]v> (type %[1]T) at index %[2]d but got argument <%[3]v> (type %[3]T)", expectedArg[i], i, actual)
-						}
-					}
-				default:
-					t.Errorf("expected argument to have type %T, but got %T", expectedArg, actualArg)
-				}
-			}
+		} else if string(bodyBytes) != expectedArg {
+			t.Errorf("expected request body %q but got %q", expectedArg, string(bodyBytes))
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -120,7 +100,7 @@ func Test_restAPIClient_executeAction_serverError(t *testing.T) {
 	})
 	defer ts.Close()
 
-	err := client.ExecuteAction(deviceID, actionID, nil)
+	err := client.ExecuteAction(deviceID, actionID, "")
 
 	expectRequestReceived(t, received)
 
