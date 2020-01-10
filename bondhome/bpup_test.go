@@ -156,18 +156,16 @@ func Test_StartListening(t *testing.T) {
 	})
 	defer srv.Stop()
 
-	c, err := NewClient(srv.Address())
+	c, err := NewClient(ctx, srv.Address())
 	if err != nil {
 		t.Fatalf("Error creating client: %v", err)
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	err = c.StartListening(ctx)
+	err = c.StartListening()
 	if err != nil {
 		t.Fatalf("Error calling StartListening: %v", err)
 	}
+	defer c.StopListening()
 
 	select {
 	case msg := <-received:
@@ -190,25 +188,23 @@ func Test_StartListening(t *testing.T) {
 
 // takes at least 90s to run
 func Test_StartListening_keepAliveError(t *testing.T) {
-	t.Skip("Un-skip this test and look at the logs to see the keep-alive retry mechanism working")
+	// t.Skip("Un-skip this test and look at the logs to see the keep-alive retry mechanism working")
 	ctx := context.Background()
 	srv := startTestServerWithHandshake(ctx, t, func(msg string) *string {
 		return nil
 	})
 	defer srv.Stop()
 
-	c, err := NewClient(srv.Address())
+	c, err := NewClient(ctx, srv.Address())
 	if err != nil {
 		t.Fatal("Error creating client:", err)
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	err = c.StartListening(ctx)
+	err = c.StartListening()
 	if err != nil {
 		t.Fatal("Error calling StartListening:", err)
 	}
+	defer c.StopListening()
 
 	// Deliberately break the keep-alive functionality by forcibly
 	// closing the client's UDP socket
