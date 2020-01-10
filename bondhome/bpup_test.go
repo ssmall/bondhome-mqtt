@@ -7,11 +7,6 @@ import (
 	"time"
 )
 
-type testServer interface {
-	Address() string
-	Stop() error
-}
-
 type udpTestServer struct {
 	cancel context.CancelFunc
 	conn   *net.UDPConn
@@ -26,7 +21,20 @@ func (s *udpTestServer) Stop() error {
 	return s.conn.Close()
 }
 
-func startTestServer(ctx context.Context, t *testing.T, messageHandler func(message string) *string) testServer {
+func (s *udpTestServer) Send(t *testing.T, msg string, c *bpupClient) {
+	t.Helper()
+	a, ok := c.conn.LocalAddr().(*net.UDPAddr)
+	if !ok {
+		t.Fatalf("Cannot cast %v to *net.UDPAddr", c.conn.LocalAddr())
+	}
+	t.Logf("Sending message %q to client @ %s", msg, a)
+	_, err := s.conn.WriteToUDP([]byte(msg), a)
+	if err != nil {
+		t.Fatal("Erroring sending message:", err)
+	}
+}
+
+func startTestServer(ctx context.Context, t *testing.T, messageHandler func(message string) *string) *udpTestServer {
 	t.Helper()
 	conn, err := net.ListenUDP("udp", nil)
 	if err != nil {
@@ -78,7 +86,7 @@ func startTestServer(ctx context.Context, t *testing.T, messageHandler func(mess
 	}
 }
 
-func startTestServerWithHandshake(ctx context.Context, t *testing.T, messageHandler func(message string) *string) testServer {
+func startTestServerWithHandshake(ctx context.Context, t *testing.T, messageHandler func(message string) *string) *udpTestServer {
 	initialResponse := `{"B":"ZZBL12345"}\n`
 
 	// Set up a channel to facilitate the initial server handshake
@@ -188,7 +196,7 @@ func Test_StartListening(t *testing.T) {
 
 // takes at least 90s to run
 func Test_StartListening_keepAliveError(t *testing.T) {
-	// t.Skip("Un-skip this test and look at the logs to see the keep-alive retry mechanism working")
+	t.Skip("Un-skip this test and look at the logs to see the keep-alive retry mechanism working")
 	ctx := context.Background()
 	srv := startTestServerWithHandshake(ctx, t, func(msg string) *string {
 		return nil
@@ -217,4 +225,73 @@ func Test_StartListening_keepAliveError(t *testing.T) {
 	// Wait long enough for some retries to trigger but not long enough
 	// for it to totally time out and panic
 	time.Sleep(90 * time.Second)
+}
+
+func Test_Receive(t *testing.T) {
+	updateMsg := `{"B":"ZZBL12345","t":"devices/aabbccdd/state","i":"00112233bbeeeeff","s":200,"m":0,"f":255,"b":{"_":"ab9284ef","power":1,"speed":2}}\n`
+
+	expectedUpdate := Update{
+		BondID:     "ZZBL12345",
+		Topic:      "devices/aabbccdd/state",
+		StatusCode: 200,
+		HTTPMethod: uint8(0),
+		Body: map[string]interface{}{
+			"_":     "ab9284ef",
+			"power": float64(1),
+			"speed": float64(2),
+		},
+	}
+
+	ctx := context.Background()
+
+	srv := startTestServerWithHandshake(ctx, t, func(msg string) *string {
+		return nil
+	})
+	defer srv.Stop()
+
+	c, err := NewClient(ctx, srv.Address())
+	if err != nil {
+		t.Fatalf("Error creating client: %v", err)
+	}
+
+	err = c.StartListening()
+	if err != nil {
+		t.Fatalf("Error calling StartListening: %v", err)
+	}
+	defer c.StopListening()
+
+	b, _ := c.(*bpupClient)
+
+	srv.Send(t, updateMsg, b)
+	update, err := c.Receive(1 * time.Second)
+	if err != nil {
+		t.Fatal("Error receiving update message:", err)
+	}
+	if update == nil {
+		t.Fatalf("Actual is nil")
+	}
+
+	if !((update.BondID == expectedUpdate.BondID) &&
+		(update.Topic == expectedUpdate.Topic) &&
+		(update.StatusCode == expectedUpdate.StatusCode) &&
+		(update.HTTPMethod == expectedUpdate.HTTPMethod) &&
+		(update.Body != nil)) {
+		t.Fatalf("Expected %#v but got %#v", expectedUpdate, *update)
+	}
+}
+
+func sendMsgToClient(t *testing.T, c *bpupClient, msg string) {
+	t.Helper()
+	a, ok := c.conn.LocalAddr().(*net.UDPAddr)
+	if !ok {
+		t.Fatalf("Cannot cast %v to *net.UDPAddr", c.conn.LocalAddr())
+	}
+	conn, err := net.DialUDP("udp", nil, a)
+	if err != nil {
+		t.Fatal("Error creating local UDP connection:", err)
+	}
+	_, err = conn.Write([]byte(msg))
+	if err != nil {
+		t.Fatal("Erroring sending message:", err)
+	}
 }

@@ -2,6 +2,7 @@ package bondhome
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -21,6 +22,9 @@ type Update struct {
 	ErrorMsg string `json:"err_msg"`
 }
 
+// Timeout is returned when an operation times out
+type Timeout error
+
 // PushClient is an interface for receiving messages
 // pushed from a Bond Home bridge
 type PushClient interface {
@@ -35,7 +39,7 @@ type PushClient interface {
 
 	// Receive waits for an update from the server, up to
 	// a specified timeout. If the receive times out,
-	// the returned *Update will be nil.
+	// the returned error will be of type Timeout.
 	Receive(timeout time.Duration) (*Update, error)
 }
 
@@ -53,12 +57,12 @@ func NewClient(ctx context.Context, bridgeAddress string) (PushClient, error) {
 		return nil, fmt.Errorf("error resolving bridgeAddress %q: %w", bridgeAddress, err)
 	}
 
-	log.Println("Opening UDP connection to", addr)
 	conn, err := net.DialUDP("udp", nil, addr)
 	if err != nil {
 		return nil, fmt.Errorf("error opening connection: %w", err)
 	}
 
+	log.Println("Opened UDP connection to", addr, "listening at", conn.LocalAddr())
 	ctx, cancel := context.WithCancel(ctx)
 
 	return &bpupClient{ctx, cancel, conn}, nil
@@ -107,7 +111,22 @@ func (c *bpupClient) StopListening() error {
 }
 
 func (c *bpupClient) Receive(timeout time.Duration) (*Update, error) {
-	return nil, nil
+	c.conn.SetReadDeadline(time.Now().Add(timeout))
+	buf := make([]byte, 512) // 512B message buffer
+	n, err := c.conn.Read(buf)
+	if err != nil {
+		if e, ok := err.(net.Error); ok && e.Timeout() {
+			return nil, Timeout(e)
+		}
+		return nil, err
+	}
+	update := Update{}
+	// use n-2 because the last two bytes of the message should be "\n"
+	err = json.Unmarshal(buf[:n-2], &update)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshaling %q: %w", string(buf[:n]), err)
+	}
+	return &update, nil
 }
 
 func sendKeepAlive(ctx context.Context, conn *net.UDPConn, backoff time.Duration, elapsed time.Duration) {
