@@ -6,16 +6,17 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strings"
 	"time"
 )
 
 // Update represents an update message from the Bond Bridge
 type Update struct {
-	BondID     string      `json:"B"`
-	Topic      string      `json:"t"`
-	StatusCode int         `json:"s"`
-	HTTPMethod uint8       `json:"m"`
-	Body       interface{} `json:"b"`
+	BondID     string          `json:"B"`
+	Topic      string          `json:"t"`
+	StatusCode int             `json:"s"`
+	HTTPMethod uint8           `json:"m"`
+	Body       json.RawMessage `json:"b"`
 
 	// Error fields
 	ErrorID  int    `json:"err_id"`
@@ -120,13 +121,14 @@ func (c *bpupClient) Receive(timeout time.Duration) (*Update, error) {
 		}
 		return nil, err
 	}
-	update := Update{}
-	// use n-2 because the last two bytes of the message should be "\n"
-	err = json.Unmarshal(buf[:n-2], &update)
+	log.Printf("Received UDP message from server: %q", string(buf[:n]))
+	trimmed := strings.TrimSpace(string(buf[:n]))
+	update := &Update{}
+	err = json.Unmarshal([]byte(trimmed), update)
 	if err != nil {
-		return nil, fmt.Errorf("error unmarshaling %q: %w", string(buf[:n]), err)
+		return nil, fmt.Errorf("error unmarshaling %q: %w", trimmed, err)
 	}
-	return &update, nil
+	return update, nil
 }
 
 func sendKeepAlive(ctx context.Context, conn *net.UDPConn, backoff time.Duration, elapsed time.Duration) {

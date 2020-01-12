@@ -228,19 +228,16 @@ func Test_StartListening_keepAliveError(t *testing.T) {
 }
 
 func Test_Receive(t *testing.T) {
-	updateMsg := `{"B":"ZZBL12345","t":"devices/aabbccdd/state","i":"00112233bbeeeeff","s":200,"m":0,"f":255,"b":{"_":"ab9284ef","power":1,"speed":2}}\n`
+	updateMsg := "{\"B\":\"ZZBL12345\",\"t\":\"devices/aabbccdd/state\",\"i\":\"00112233bbeeeeff\",\"s\":200,\"m\":0,\"f\":255,\"b\":{\"_\":\"ab9284ef\",\"power\":1,\"speed\":2}}\n"
 
 	expectedUpdate := Update{
 		BondID:     "ZZBL12345",
 		Topic:      "devices/aabbccdd/state",
 		StatusCode: 200,
 		HTTPMethod: uint8(0),
-		Body: map[string]interface{}{
-			"_":     "ab9284ef",
-			"power": float64(1),
-			"speed": float64(2),
-		},
 	}
+
+	expectedBodyJSON := `{"_":"ab9284ef","power":1,"speed":2}`
 
 	ctx := context.Background()
 
@@ -274,9 +271,16 @@ func Test_Receive(t *testing.T) {
 	if !((update.BondID == expectedUpdate.BondID) &&
 		(update.Topic == expectedUpdate.Topic) &&
 		(update.StatusCode == expectedUpdate.StatusCode) &&
-		(update.HTTPMethod == expectedUpdate.HTTPMethod) &&
-		(update.Body != nil)) {
+		(update.HTTPMethod == expectedUpdate.HTTPMethod)) {
 		t.Fatalf("Expected %#v but got %#v", expectedUpdate, *update)
+	} else {
+		body, err := update.Body.MarshalJSON()
+		if err != nil {
+			t.Fatal("Error marshaling update body:", err)
+		}
+		if string(body) != expectedBodyJSON {
+			t.Fatalf("Expected body to be %q but was %q", expectedBodyJSON, string(body))
+		}
 	}
 }
 
