@@ -16,4 +16,4 @@ COPY --from=builder /home/bondhome-mqtt/main /home/bondhome-mqtt/
 
 WORKDIR /home/bondhome-mqtt/
 
-CMD ["./main", "-broker", "${BROKER}", "-bridge", "${BRIDGE}", "-token", "${TOKEN}"]
+CMD ./main -broker ${BROKER} -bridge ${BRIDGE} -token ${TOKEN}

@@ -2,19 +2,25 @@ package mqtt
 
 import (
 	"fmt"
+	"log"
+	"os"
 	"time"
 
 	paho "github.com/eclipse/paho.mqtt.golang"
 )
 
 const (
-	clientID       = "bondhome-mqtt"
 	connectTimeout = 10 * time.Second
 )
 
 // NewClient creates a new MQTT client and tries to establish
 // a connection to the specified broker
 func NewClient(broker string) (paho.Client, error) {
+	clientID, err := os.Hostname()
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("Establishing connection to MQTT broker @ %s using client ID %q", broker, clientID)
 	opts := paho.NewClientOptions()
 	opts.AddBroker(broker)
 	opts.SetClientID(clientID)
