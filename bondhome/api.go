@@ -130,7 +130,7 @@ func (c *restAPIClient) GetDeviceIDs() ([]string, error) {
 
 func (c *restAPIClient) newRequest(method string, urlPath string, body []byte) (*http.Request, error) {
 	req, err := http.NewRequest(method,
-		fmt.Sprintf("http://%s/%s", c.hostname, urlPath),
+		fmt.Sprintf("%s/%s", c.hostname, urlPath),
 		bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
