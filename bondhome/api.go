@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
+
+	"github.com/golang/glog"
 )
 
 // Device represents information about the device
@@ -50,7 +51,7 @@ func (c *restAPIClient) ExecuteAction(deviceID string, actionID string, argument
 		return err
 	}
 
-	log.Printf("Sending request: %s %s body=%q", req.Method, req.URL, argumentJSON)
+	glog.V(1).Infof("Sending request: %s %s body=%q", req.Method, req.URL, argumentJSON)
 
 	resp, err := c.client.Do(req)
 	if err != nil {

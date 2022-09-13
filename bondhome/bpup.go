@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
 	"strings"
 	"time"
+
+	"github.com/golang/glog"
 )
 
 // Update represents an update message from the Bond Bridge
@@ -63,7 +64,7 @@ func NewClient(ctx context.Context, bridgeAddress string) (PushClient, error) {
 		return nil, fmt.Errorf("error opening connection: %w", err)
 	}
 
-	log.Println("Opened UDP connection to", addr, "listening at", conn.LocalAddr())
+	glog.Infoln("Opened UDP connection to", addr, "listening at", conn.LocalAddr())
 	ctx, cancel := context.WithCancel(ctx)
 
 	return &bpupClient{ctx, cancel, conn}, nil
@@ -84,7 +85,7 @@ func (c *bpupClient) StartListening() error {
 	if err != nil {
 		return fmt.Errorf("error reading handshake response from server: %w", err)
 	}
-	log.Println("Received handshake response from server:", string(buf[:n]))
+	glog.Infoln("Received handshake response from server:", string(buf[:n]))
 
 	go func() {
 		for {
@@ -121,7 +122,7 @@ func (c *bpupClient) Receive(timeout time.Duration) (*Update, error) {
 		}
 		return nil, err
 	}
-	log.Printf("Received UDP message from server: %q", string(buf[:n]))
+	glog.V(1).Infof("Received UDP message from server: %q", string(buf[:n]))
 	trimmed := strings.TrimSpace(string(buf[:n]))
 	update := &Update{}
 	err = json.Unmarshal([]byte(trimmed), update)
@@ -134,16 +135,16 @@ func (c *bpupClient) Receive(timeout time.Duration) (*Update, error) {
 func sendKeepAlive(ctx context.Context, conn *net.UDPConn, backoff time.Duration, elapsed time.Duration) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("Retrying failed keep-alive after %s; failure was: %v\n", backoff, r)
+			glog.Warningf("Retrying failed keep-alive after %s; failure was: %v\n", backoff, r)
 			select {
 			case <-time.After(backoff):
 				sendKeepAlive(ctx, conn, 2*backoff, elapsed+backoff)
 			case <-ctx.Done():
 				if ctx.Err() == context.DeadlineExceeded {
-					log.Printf("Not retrying failed keep-alive since %s have elapsed", elapsed)
+					glog.Errorf("Not retrying failed keep-alive since %s have elapsed", elapsed)
 					panic(r)
 				}
-				log.Print("Canceling keep-alive retry loop")
+				glog.Warning("Canceling keep-alive retry loop")
 				return
 			}
 		}
