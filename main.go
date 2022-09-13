@@ -4,10 +4,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"time"
+
+	"github.com/golang/glog"
 
 	"github.com/ssmall/bondhome-mqtt/bondhome"
 	"github.com/ssmall/bondhome-mqtt/mqtt"
@@ -23,13 +24,13 @@ func main() {
 	flag.Parse()
 
 	if *brokerAddress == "" {
-		log.Fatal("Must specify broker!")
+		glog.Fatal("Must specify broker!")
 	}
 	if *bridgeAddress == "" {
-		log.Fatal("Must specify bridge!")
+		glog.Fatal("Must specify bridge!")
 	}
 	if *bridgeToken == "" {
-		log.Fatal("Must specify token!")
+		glog.Fatal("Must specify token!")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -38,32 +39,32 @@ func main() {
 	mqttClient, err := mqtt.NewClient(*brokerAddress)
 
 	if err != nil {
-		log.Fatalf("Unable to connect to MQTT broker: %v", err)
+		glog.Fatalf("Unable to connect to MQTT broker: %v", err)
 	}
 
-	log.Println("Connected to broker @ ", *brokerAddress)
+	glog.Infoln("Connected to broker @ ", *brokerAddress)
 
 	bridge := bondhome.NewBridge(*bridgeAddress, *bridgeToken)
 
 	err = setupDeviceActionHandlers(ctx, bridge, mqttClient)
 	if err != nil {
-		log.Fatal("Exiting due to error:", err)
+		glog.Fatal("Exiting due to error:", err)
 	}
 
 	pushClient, err := bondhome.NewClient(ctx, *bridgeAddress+":30007")
 	if err != nil {
-		log.Fatal("Exiting due to error:", err)
+		glog.Fatal("Exiting due to error:", err)
 	}
 
 	err = setupDeviceStateHandlers(ctx, pushClient, mqttClient)
 	if err != nil {
-		log.Fatal("Exiting due to error:", err)
+		glog.Fatal("Exiting due to error:", err)
 	}
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, os.Kill)
 	s := <-c
-	log.Printf("Got %s, exiting", s)
+	glog.Warningf("Got %s, exiting", s)
 }
 
 func setupDeviceStateHandlers(ctx context.Context, pushClient bondhome.PushClient, mqttClient paho.Client) error {
@@ -88,15 +89,15 @@ func setupDeviceStateHandlers(ctx context.Context, pushClient bondhome.PushClien
 					topic := "bondhome/" + update.Topic
 					body, err := update.Body.MarshalJSON()
 					if err != nil {
-						log.Println("Unable to marshal update body to JSON", err)
+						glog.Errorln("Unable to marshal update body to JSON", err)
 					}
-					log.Printf("Publishing to %s with body: %v", topic, string(body))
+					glog.V(1).Infof("Publishing to %s with body: %v", topic, string(body))
 					token := mqttClient.Publish(topic, byte(0), false, string(body))
 					if token.Wait() && token.Error() != nil {
-						log.Printf("Unable to publish to topic %s: %v", topic, token.Error())
+						glog.Errorf("Unable to publish to topic %s: %v", topic, token.Error())
 					}
 				} else if update != nil && update.ErrorMsg != "" {
-					log.Printf("Got error response from Bond Home bridge: code %d %q", update.ErrorID, update.ErrorMsg)
+					glog.Errorf("Got error response from Bond Home bridge: code %d %q", update.ErrorID, update.ErrorMsg)
 				}
 			}
 		}
@@ -121,7 +122,7 @@ func setupDeviceActionHandlers(ctx context.Context, bridge bondhome.Bridge, mqtt
 			if err != nil {
 				return err
 			}
-			log.Printf("Discovered device with id %q: %#v", localDeviceID, d)
+			glog.Infof("Discovered device with id %q: %#v", localDeviceID, d)
 
 			var hg errgroup.Group
 
@@ -147,9 +148,9 @@ func actionHandler(mqtt paho.Client, bridge bondhome.Bridge, deviceID string, ac
 	topic := fmt.Sprintf("bondhome/devices/%s/%s", deviceID, actionID)
 
 	token := mqtt.Subscribe(topic, byte(0), func(c paho.Client, m paho.Message) {
-		log.Printf("Message(%d): %q on topic %s", m.MessageID(), m.Payload(), m.Topic())
+		glog.V(1).Infof("Message(%d): %q on topic %s", m.MessageID(), m.Payload(), m.Topic())
 		if err := bridge.ExecuteAction(deviceID, actionID, string(m.Payload())); err != nil {
-			log.Printf("Not acking message due to error executing action: %v\n", err)
+			glog.Errorf("Not acking message due to error executing action: %v\n", err)
 		} else {
 			m.Ack()
 		}
@@ -159,7 +160,7 @@ func actionHandler(mqtt paho.Client, bridge bondhome.Bridge, deviceID string, ac
 		return fmt.Errorf("unable to subscribe to topic %s: %w", topic, token.Error())
 	}
 
-	log.Println("Subcribed to topic", topic)
+	glog.Infoln("Subcribed to topic", topic)
 
 	return nil
 }

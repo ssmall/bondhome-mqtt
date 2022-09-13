@@ -4,6 +4,7 @@ go 1.19
 
 require (
 	github.com/eclipse/paho.mqtt.golang v1.4.1
+	github.com/golang/glog v1.0.0
 	golang.org/x/sync v0.0.0-20220907140024-f12130a52804
 )
 

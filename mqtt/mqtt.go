@@ -2,9 +2,10 @@ package mqtt
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"time"
+
+	"github.com/golang/glog"
 
 	paho "github.com/eclipse/paho.mqtt.golang"
 )
@@ -20,7 +21,7 @@ func NewClient(broker string) (paho.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("Establishing connection to MQTT broker @ %s using client ID %q", broker, clientID)
+	glog.Infof("Establishing connection to MQTT broker @ %s using client ID %q", broker, clientID)
 	opts := paho.NewClientOptions()
 	opts.AddBroker(broker)
 	opts.SetClientID(clientID)
