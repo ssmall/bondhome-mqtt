@@ -137,6 +137,12 @@ func Test_restAPIClient_getDeviceIds(t *testing.T) {
 			},
 			"deviceID3": {
 				"_": "aaf392f2"
+			},
+			"_": {
+
+			},
+			"__": {
+				
 			}
 		}`
 

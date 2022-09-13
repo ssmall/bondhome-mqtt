@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
 
 	"github.com/golang/glog"
 )
@@ -120,7 +121,7 @@ func (c *restAPIClient) GetDeviceIDs() ([]string, error) {
 	ids := make([]string, 0, len(responseObject)-1)
 
 	for k := range responseObject {
-		if k != "_" {
+		if !strings.HasPrefix(k, "_") {
 			ids = append(ids, k)
 		}
 	}
