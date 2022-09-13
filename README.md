@@ -28,9 +28,7 @@ See [2] for instructions on getting the correct value for `<token>`
 
 ### Docker
 
-The pre-built image is available on Docker Hub as [spencersmall/bondhome-mqtt](https://hub.docker.com/r/spencersmall/bondhome-mqtt).
-
-A [Dockerfile](Dockerfile) is also included in this repo.
+A pre-built Docker image is available: `docker pull docker pull ghcr.io/ssmall/bondhome-mqtt:v0.0.1`
 
 [1]: http://docs-local.appbond.com/#section/Bond-Push-UDP-Protocol-(BPUP)
 [2]: http://docs-local.appbond.com/#section/Getting-Started/Getting-the-Bond-Token
