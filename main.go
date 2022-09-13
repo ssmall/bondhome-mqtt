@@ -113,6 +113,8 @@ func setupDeviceActionHandlers(ctx context.Context, bridge bondhome.Bridge, mqtt
 		return fmt.Errorf("could not get devices from bridge: %w", err)
 	}
 
+	glog.Infoln("Got device IDs: ", devices)
+
 	var g errgroup.Group
 
 	for _, deviceID := range devices {
