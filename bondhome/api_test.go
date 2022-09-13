@@ -1,3 +1,5 @@
+//go:build network_test
+
 package bondhome
 
 import (
