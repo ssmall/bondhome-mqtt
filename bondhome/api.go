@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
 
 	"github.com/golang/glog"
 )
@@ -120,7 +121,7 @@ func (c *restAPIClient) GetDeviceIDs() ([]string, error) {
 	ids := make([]string, 0, len(responseObject)-1)
 
 	for k := range responseObject {
-		if k != "_" {
+		if !strings.HasPrefix(k, "_") {
 			ids = append(ids, k)
 		}
 	}
@@ -130,7 +131,7 @@ func (c *restAPIClient) GetDeviceIDs() ([]string, error) {
 
 func (c *restAPIClient) newRequest(method string, urlPath string, body []byte) (*http.Request, error) {
 	req, err := http.NewRequest(method,
-		fmt.Sprintf("http://%s/%s", c.hostname, urlPath),
+		fmt.Sprintf("%s/%s", c.hostname, urlPath),
 		bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)

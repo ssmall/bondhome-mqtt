@@ -1,5 +1,3 @@
-//go:build network_test
-
 package bondhome
 
 import (
@@ -27,6 +25,9 @@ func setupTestServer(t *testing.T, requestHandler func(http.ResponseWriter, *htt
 		close(received)
 		requestHandler(w, r)
 	}))
+	t.Cleanup(func() {
+		ts.Close()
+	})
 
 	client := &restAPIClient{
 		client:   ts.Client(),
@@ -136,6 +137,12 @@ func Test_restAPIClient_getDeviceIds(t *testing.T) {
 			},
 			"deviceID3": {
 				"_": "aaf392f2"
+			},
+			"_": {
+
+			},
+			"__": {
+				
 			}
 		}`
 
