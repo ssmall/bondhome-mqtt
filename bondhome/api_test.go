@@ -31,7 +31,7 @@ func setupTestServer(t *testing.T, requestHandler func(http.ResponseWriter, *htt
 
 	client := &restAPIClient{
 		client:   ts.Client(),
-		hostname: ts.URL,
+		hostname: strings.Replace(ts.URL, "http://", "", 1),
 		token:    token,
 	}
 
@@ -142,7 +142,7 @@ func Test_restAPIClient_getDeviceIds(t *testing.T) {
 
 			},
 			"__": {
-				
+
 			}
 		}`
 
