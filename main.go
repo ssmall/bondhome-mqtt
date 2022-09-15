@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -151,7 +152,14 @@ func actionHandler(mqtt paho.Client, bridge bondhome.Bridge, deviceID string, ac
 
 	token := mqtt.Subscribe(topic, byte(0), func(c paho.Client, m paho.Message) {
 		glog.V(1).Infof("Message(%d): %q on topic %s", m.MessageID(), m.Payload(), m.Topic())
-		if err := bridge.ExecuteAction(deviceID, actionID, string(m.Payload())); err != nil {
+
+		payload := m.Payload()
+		if err := json.Unmarshal(payload, &map[string]interface{}{}); err != nil {
+			glog.V(1).Infof("Message payload %q is not an object (unmarshaling error was: %s), will be wrapped as object", payload, err)
+			payload = []byte(fmt.Sprintf("{\"body\": %s}", payload))
+		}
+
+		if err := bridge.ExecuteAction(deviceID, actionID, string(payload)); err != nil {
 			glog.Errorf("Not acking message due to error executing action: %v\n", err)
 		} else {
 			m.Ack()
